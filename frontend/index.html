@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrailQuest AI — Touch Grass & Explore Outdoors</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-tag">🌿 TrailQuest AI</div>
+      <h1>Touch Grass. Go Outside.</h1>
+      <p class="subtitle">
+        Spend less time on your screen. Go outside. Enter your location below to generate a real-world outdoor adventure.
+      </p>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+      <!-- Quest Generator Form -->
+      <section class="card" id="form-card">
+        <h2>Generate Your Outdoor Quest</h2>
+        <form id="quest-form">
+          <div class="form-group">
+            <label for="location">Location / City *</label>
+            <input type="text" id="location" placeholder="e.g. Chennai, Central Park" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="available_time">Time Available (minutes) *</label>
+              <select id="available_time" required>
+                <option value="30">30 minutes</option>
+                <option value="60" selected>60 minutes</option>
+                <option value="90">90 minutes</option>
+                <option value="120">120 minutes</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="activity">Activity *</label>
+              <select id="activity" required>
+                <option value="Walking">Walking</option>
+                <option value="Running">Running</option>
+                <option value="Cycling">Cycling</option>
+                <option value="Photography">Photography</option>
+                <option value="Nature exploration">Nature exploration</option>
+                <option value="Hiking">Hiking</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="difficulty">Difficulty *</label>
+              <select id="difficulty" required>
+                <option value="Easy">Easy</option>
+                <option value="Moderate">Moderate</option>
+                <option value="Hard">Hard</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="interests">Interests (Optional)</label>
+            <input type="text" id="interests" placeholder="e.g. nature, photography, birds" />
+          </div>
+
+          <button type="submit" id="generate-btn" class="btn primary-btn">
+            GENERATE QUEST 🚀
+          </button>
+        </form>
+      </section>
+
+      <!-- Loading State -->
+      <div id="loading-spinner" class="card hidden text-center">
+        <div class="spinner"></div>
+        <p class="loading-text">Finding a real outdoor place and creating your quest...</p>
+      </div>
+
+      <!-- Error State -->
+      <div id="error-card" class="card error-box hidden">
+        <h3 id="error-title">Error</h3>
+        <p id="error-message">Something went wrong.</p>
+      </div>
+
+      <!-- Quest Display Card -->
+      <section id="quest-card" class="card quest-container hidden">
+        <div class="quest-header">
+          <span class="badge" id="quest-difficulty">Easy</span>
+          <span class="badge outline" id="quest-duration">60 mins</span>
+        </div>
+        <h2 id="quest-title">Quest Title</h2>
+        <div class="quest-location">📍 <strong id="quest-location-name">Location</strong></div>
+        <div class="quest-address" id="quest-address">Address</div>
+        <p id="quest-description" class="quest-desc">Description</p>
+
+        <div class="objectives-section">
+          <h3>🎯 Objectives</h3>
+          <ul id="quest-objectives" class="objectives-list"></ul>
+        </div>
+
+        <div class="safety-box">
+          ⚠️ <strong>Safety Note:</strong> <span id="quest-safety">Stay alert.</span>
+        </div>
+
+        <!-- Completion Form -->
+        <div class="completion-section">
+          <h3>How did it go?</h3>
+          <p class="hint">After completing your quest, share how it went:</p>
+          
+          <div class="status-buttons">
+            <button type="button" class="btn status-btn" data-status="completed">Completed</button>
+            <button type="button" class="btn status-btn" data-status="partially_completed">Partially Completed</button>
+            <button type="button" class="btn status-btn" data-status="not_completed">Not Completed</button>
+          </div>
+
+          <div class="form-group margin-top">
+            <label for="reflection">Reflection (Optional)</label>
+            <textarea id="reflection" rows="3" placeholder="What did you notice or enjoy?"></textarea>
+          </div>
+
+          <button id="submit-completion-btn" class="btn secondary-btn" disabled>
+            SAVE RESULT
+          </button>
+        </div>
+      </section>
+
+      <!-- Success Feedback Card -->
+      <div id="success-card" class="card success-box hidden text-center">
+        <h2 id="feedback-title">🎉 Quest Result Saved!</h2>
+        <p id="feedback-message" class="feedback-msg">Nice work. You touched grass today. 🌿</p>
+        <button id="new-quest-btn" class="btn primary-btn margin-top">Generate Another Quest</button>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>TrailQuest AI — Spend less time on your screen. Go outside.</p>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

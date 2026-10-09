@@ -1,6 +1,6 @@
 import httpx
 
-from backend.app.config import SERPAPI_API_KEY
+from backend.app.config import SERPAPI_API_KEY, SERPAPI_TIMEOUT_SECONDS
 
 
 SERPAPI_URL = "https://serpapi.com/search.json"
@@ -20,11 +20,15 @@ async def search_outdoor_locations(location: str) -> list[dict]:
         "api_key": SERPAPI_API_KEY,
     }
 
+    timeout = httpx.Timeout(SERPAPI_TIMEOUT_SECONDS, connect=10.0)
+
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(SERPAPI_URL, params=params)
             response.raise_for_status()
             data = response.json()
+    except httpx.TimeoutException as exc:
+        raise SerpApiError("Location search timed out.") from exc
     except httpx.HTTPError as exc:
         raise SerpApiError("Location search request failed.") from exc
 

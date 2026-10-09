@@ -21,6 +21,14 @@ def test_health_endpoint():
     assert "durable" in body["storage"]
 
 
+def test_frontend_assets_served():
+    index = client.get("/")
+    assert index.status_code == 200
+    assert "TrailQuest" in index.text
+    assert client.get("/script.js").status_code == 200
+    assert client.get("/style.css").status_code == 200
+
+
 def test_invalid_request_validation():
     response = client.post(
         "/generate-quest",
@@ -108,6 +116,22 @@ def test_serpapi_key_missing(mock_gen):
 
 
 @patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
+def test_serpapi_timeout(mock_search):
+    mock_search.side_effect = SerpApiError("Location search timed out.")
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 502
+    assert "timed out" in response.json()["detail"].lower()
+
+
+@patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
 def test_serpapi_failure(mock_search):
     mock_search.side_effect = SerpApiError("fail")
     response = client.post(
@@ -136,6 +160,57 @@ def test_serpapi_empty_results(mock_search):
     )
     assert response.status_code == 404
     assert "No real outdoor locations found" in response.json()["detail"]
+
+
+@patch("backend.app.services.quest_service.generate_quest", new_callable=AsyncMock)
+@patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
+def test_ollama_model_not_found(mock_search, mock_gemma):
+    from backend.app.services.gemma_service import OllamaModelNotFoundError
+
+    mock_search.return_value = [
+        {"name": "Real Park", "address": "1 Main St", "rating": 4.5, "type": "Park"}
+    ]
+    mock_gemma.side_effect = OllamaModelNotFoundError("Model missing")
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 503
+    assert "model" in response.json()["detail"].lower()
+
+
+@patch("backend.app.main.QUEST_GENERATE_TIMEOUT_SECONDS", 0.001)
+@patch("backend.app.main.generate_user_quest", new_callable=AsyncMock)
+def test_generate_quest_pipeline_timeout(mock_gen):
+    async def slow_generate(*_args, **_kwargs):
+        await asyncio.sleep(0.05)
+        return {
+            "title": "Late Quest",
+            "location": "Park",
+            "estimated_duration": 60,
+            "difficulty": "easy",
+            "description": "D",
+            "objectives": ["a", "b", "c"],
+            "safety_note": "S",
+            "_selected_location": {"name": "Park"},
+        }
+
+    mock_gen.side_effect = slow_generate
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 504
 
 
 @patch("backend.app.services.quest_service.generate_quest", new_callable=AsyncMock)

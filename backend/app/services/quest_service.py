@@ -1,9 +1,13 @@
 import json
+import logging
 import re
+import time
 from typing import Any
 
 from backend.app.services.gemma_service import generate_quest
 from backend.app.services.serpapi_service import search_outdoor_locations
+
+logger = logging.getLogger("trailquest.quest")
 
 
 def _extract_json(text: str) -> dict:
@@ -116,7 +120,14 @@ async def generate_user_quest(
     interests: str = "",
 ) -> dict:
     """Orchestrates location search and quest generation using Ollama."""
+    t0 = time.perf_counter()
+    logger.info("Location search started for area=%s", location)
     locations = await search_outdoor_locations(location)
+    logger.info(
+        "Location search completed count=%s elapsed=%.2fs",
+        len(locations),
+        time.perf_counter() - t0,
+    )
     if not locations:
         raise ValueError(f"No real outdoor locations found for '{location}'.")
 
@@ -163,7 +174,10 @@ JSON OUTPUT FORMAT:
 }}
 """
 
+    logger.info("AI generation started")
+    t1 = time.perf_counter()
     raw_response = await generate_quest(prompt)
+    logger.info("AI generation completed elapsed=%.2fs", time.perf_counter() - t1)
 
     try:
         quest_data = _extract_json(raw_response)
@@ -176,5 +190,6 @@ JSON OUTPUT FORMAT:
     validated, selected_location = _validate_quest_payload(
         quest_data, locations, available_time, difficulty
     )
+    logger.info("Quest validation completed location=%s", validated.get("location"))
     validated["_selected_location"] = selected_location
     return validated

@@ -44,6 +44,27 @@ def test_storage_status_uri_set_but_unreachable():
     assert status["mongodb_reachable"] is False
 
 
+def test_storage_status_authentication_failed_message():
+    with patch("backend.app.services.storage_status.is_mongodb_configured", return_value=True):
+        with patch(
+            "backend.app.services.storage_status.ping_mongodb",
+            new_callable=AsyncMock,
+            return_value=(False, "authentication_failed"),
+        ):
+            status = asyncio.run(get_storage_status())
+    assert status["mongodb_error_kind"] == "authentication_failed"
+    assert "authentication failed" in status["message"].lower()
+
+
+def test_classify_authentication_error():
+    from pymongo.errors import OperationFailure
+
+    from backend.app.database.mongodb import _classify_connection_error
+
+    exc = OperationFailure("bad auth : Authentication failed.", 8000, {})
+    assert _classify_connection_error(exc) == "authentication_failed"
+
+
 def test_health_includes_storage_block():
     response = client.get("/health")
     assert response.status_code == 200

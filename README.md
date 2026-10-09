@@ -178,20 +178,31 @@ Check storage mode anytime: `GET /health` returns a `storage` object (`mode`, `d
 
 5. **Run the API (separate terminal is fine)**
 
+   On Windows, port **8000** is sometimes blocked (`WinError 10013`). Use **8080**:
+
    ```powershell
    .\.venv\Scripts\Activate.ps1
-   python -m uvicorn backend.app.main:app --reload --reload-exclude ".venv"
+   python -m uvicorn backend.app.main:app --reload --reload-exclude ".venv" --host 127.0.0.1 --port 8080
    ```
 
 6. **Open the app**
 
-   Visit [http://127.0.0.1:8000](http://127.0.0.1:8000) — FastAPI serves the frontend from `/`.
+   Visit [http://127.0.0.1:8080](http://127.0.0.1:8080) — FastAPI serves the frontend from `/`.  
+   Open the app from the **same URL** as Uvicorn (not `file://` or a different port).
+
+7. **Verify MongoDB (optional)**
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\check_mongodb.py
+   ```
+
+   Expect `ping_ok True`. `GET /health` also reports `storage.mode` and `storage.durable`.
 
 ---
 
 ## API documentation
 
-Interactive docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+Interactive docs: [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs)
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
@@ -241,13 +252,25 @@ Ollama on your laptop listens on `127.0.0.1`. A cloud host (e.g. Render free tie
 
 ---
 
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Spinner never ends | Gemma can take **1–3 minutes** on first run; wait for the loading message to change. Ensure **Ollama** is running and `ollama pull gemma3:4b` completed. Check the Uvicorn terminal for `trailquest` log lines (location search → AI → MongoDB). |
+| “Cannot reach the server” | Start Uvicorn and open the app at the **same port** (e.g. `http://127.0.0.1:8080`). |
+| MongoDB banner says in-memory | Run `scripts\check_mongodb.py`. Fix Atlas user/password (URL-encode special characters in the password), IP allowlist, then restart Uvicorn. |
+| 503 from `/generate-quest` | Ollama not running or model missing (`ollama list`). |
+| 504 timeout | Increase `OLLAMA_TIMEOUT_SECONDS` / `QUEST_GENERATE_TIMEOUT_SECONDS` in `.env`. |
+
+---
+
 ## Current limitations
 
 - Location search requires internet (SerpApi).
 - Quest generation requires a running Ollama instance with the configured model.
 - The app does not verify opening hours, accessibility, or safety of places.
-- First Gemma response can take up to ~1–2 minutes on CPU-only hardware.
-- Without `MONGODB_URI`, quests survive only until the server process restarts (in-memory fallback).
+- First Gemma response can take up to ~1–3 minutes on CPU-only hardware.
+- Without a working `MONGODB_URI`, quests use in-memory fallback until the server restarts.
 
 ---
 

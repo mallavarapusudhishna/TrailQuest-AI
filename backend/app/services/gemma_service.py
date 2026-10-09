@@ -1,10 +1,14 @@
 import httpx
 
-from backend.app.config import OLLAMA_MODEL, OLLAMA_URL
+from backend.app.config import OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS, OLLAMA_URL
 
 
 class OllamaConnectionError(Exception):
     """Raised when Ollama cannot be reached or returns an error."""
+
+
+class OllamaModelNotFoundError(OllamaConnectionError):
+    """Raised when the configured model is missing from Ollama."""
 
 
 async def generate_quest(prompt: str) -> str:
@@ -14,8 +18,10 @@ async def generate_quest(prompt: str) -> str:
         "stream": False,
     }
 
+    timeout = httpx.Timeout(OLLAMA_TIMEOUT_SECONDS, connect=15.0)
+
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(OLLAMA_URL, json=payload)
             response.raise_for_status()
             data = response.json()
@@ -25,9 +31,14 @@ async def generate_quest(prompt: str) -> str:
         ) from exc
     except httpx.TimeoutException as exc:
         raise OllamaConnectionError(
-            "Ollama request timed out while generating the quest."
+            "Ollama request timed out while generating the quest. "
+            "Try again or increase OLLAMA_TIMEOUT_SECONDS."
         ) from exc
     except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise OllamaModelNotFoundError(
+                f"Model '{OLLAMA_MODEL}' was not found in Ollama. Run: ollama pull {OLLAMA_MODEL}"
+            ) from exc
         raise OllamaConnectionError(
             "Ollama returned an error while generating the quest."
         ) from exc

@@ -1,4 +1,5 @@
 const API_BASE_URL = window.location.origin;
+const GENERATE_QUEST_TIMEOUT_MS = 240000;
 
 const FEEDBACK = {
   completed: "Quest complete. Nice work getting outside.",
@@ -12,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const questForm = document.getElementById("quest-form");
   const generateBtn = document.getElementById("generate-btn");
   const loadingSpinner = document.getElementById("loading-spinner");
+  const loadingText = loadingSpinner?.querySelector(".loading-text");
   const errorCard = document.getElementById("error-card");
   const errorMessage = document.getElementById("error-message");
   const questCard = document.getElementById("quest-card");
@@ -35,9 +37,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let currentQuestId = null;
   let selectedStatus = null;
+  let generateInFlight = false;
 
   questForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (generateInFlight) return;
 
     const location = document.getElementById("location").value.trim();
     const available_time = parseInt(document.getElementById("available_time").value, 10);
@@ -55,52 +59,102 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    generateInFlight = true;
     hide(errorCard);
     hide(questCard);
     hide(successCard);
     show(loadingSpinner);
+    setLoadingMessage("Searching for real outdoor places…");
     generateBtn.disabled = true;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/generate-quest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location,
-          available_time,
-          activity,
-          difficulty,
-          interests,
-        }),
-      });
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/generate-quest`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location,
+            available_time,
+            activity,
+            difficulty,
+            interests,
+          }),
+        },
+        GENERATE_QUEST_TIMEOUT_MS,
+        () => setLoadingMessage("Personalizing your quest with Gemma (this can take 1–3 minutes)…")
+      );
 
       let data = {};
-      try {
-        data = await response.json();
-      } catch {
-        data = {};
+      const raw = await response.text();
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          throw new Error("Server returned an invalid response. Check the terminal logs and try again.");
+        }
       }
 
       if (!response.ok) {
-        const detail = data.detail;
-        const msg = Array.isArray(detail)
-          ? detail.map((d) => d.msg).join(" ")
-          : detail || "Failed to generate quest.";
-        throw new Error(msg);
+        throw new Error(formatApiError(response.status, data));
+      }
+
+      if (!data.title || !data.location) {
+        throw new Error("Quest response was incomplete. Please try again.");
       }
 
       displayQuest(data);
     } catch (err) {
-      if (err.message.includes("Failed to fetch")) {
-        showError("Cannot reach the server. Start FastAPI with uvicorn and open this page from http://127.0.0.1:8000");
-      } else {
-        showError(err.message);
-      }
+      showError(formatClientError(err));
     } finally {
+      generateInFlight = false;
       hide(loadingSpinner);
       generateBtn.disabled = false;
     }
   });
+
+  function setLoadingMessage(message) {
+    if (loadingText) loadingText.textContent = message;
+  }
+
+  function formatApiError(status, data) {
+    const detail = data?.detail;
+    if (Array.isArray(detail)) {
+      return detail.map((d) => d.msg || d.message || String(d)).join(" ");
+    }
+    if (typeof detail === "string" && detail) return detail;
+    if (status === 504) {
+      return "Quest generation timed out. Ensure Ollama is running and try again in a minute.";
+    }
+    return "Failed to generate quest.";
+  }
+
+  function formatClientError(err) {
+    if (err.name === "AbortError") {
+      return (
+        "The request timed out. Gemma can take a few minutes on first run—keep Ollama open and try again."
+      );
+    }
+    if (err.message && err.message.includes("Failed to fetch")) {
+      return `Cannot reach the server at ${API_BASE_URL}. Start uvicorn on this port and refresh.`;
+    }
+    return err.message || "Something went wrong.";
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs, onSlow) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const slowTimer = setTimeout(() => {
+      if (typeof onSlow === "function") onSlow();
+    }, 8000);
+
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+      clearTimeout(slowTimer);
+    }
+  }
 
   function displayQuest(quest) {
     currentQuestId = quest.quest_id || quest.id;
@@ -148,20 +202,27 @@ document.addEventListener("DOMContentLoaded", () => {
     submitCompletionBtn.textContent = "Saving…";
 
     try {
-      const response = await fetch(`${API_BASE_URL}/quests/${currentQuestId}/complete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: selectedStatus,
-          reflection: reflectionInput.value.trim() || null,
-        }),
-      });
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/quests/${currentQuestId}/complete`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: selectedStatus,
+            reflection: reflectionInput.value.trim() || null,
+          }),
+        },
+        30000
+      );
 
       let data = {};
-      try {
-        data = await response.json();
-      } catch {
-        data = {};
+      const raw = await response.text();
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          throw new Error("Invalid response while saving completion.");
+        }
       }
 
       if (!response.ok) {
@@ -177,7 +238,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (priorQuestVisible) {
         show(questCard);
       }
-      showError(err.message);
+      showError(formatClientError(err));
     } finally {
       submitCompletionBtn.textContent = originalLabel;
       submitCompletionBtn.disabled = !selectedStatus;
@@ -208,7 +269,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById("storage-notice");
     if (!el) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/health`);
+      const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {}, 10000);
       if (!response.ok) return;
       const data = await response.json();
       const storage = data.storage;
@@ -219,7 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
         el.classList.add("storage-ok");
       }
     } catch {
-      /* ignore — server may be offline until user starts it */
+      /* server may still be starting */
     }
   }
 });

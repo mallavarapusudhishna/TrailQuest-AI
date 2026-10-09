@@ -119,6 +119,22 @@ def test_serpapi_failure(mock_search):
     assert response.status_code == 502
 
 
+@patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
+def test_serpapi_empty_results(mock_search):
+    mock_search.return_value = []
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Nowhere",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 404
+    assert "No real outdoor locations found" in response.json()["detail"]
+
+
 @patch("backend.app.services.quest_service.generate_quest", new_callable=AsyncMock)
 @patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
 def test_ollama_connection_failure(mock_search, mock_gemma):

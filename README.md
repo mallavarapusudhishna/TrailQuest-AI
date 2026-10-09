@@ -161,8 +161,10 @@ TrailQuestAI/
    | Variable | Required | Description |
    | --- | --- | --- |
    | `SERPAPI_API_KEY` | Yes | SerpApi key for location search |
-   | `MONGODB_URI` | No | MongoDB Atlas URI; omit to use in-memory storage |
-   | `MONGODB_DB_NAME` | No | Database name (default `trailquest_db`) |
+| `MONGODB_URI` | No | MongoDB Atlas URI; omit to use in-memory storage |
+| `MONGODB_DB_NAME` | No | Database name (default `trailquest_db`) |
+
+Check storage mode anytime: `GET /health` returns a `storage` object (`mode`, `durable`, `message`). The home page shows the same message in a banner when the server is running.
    | `OLLAMA_URL` | No | Default `http://127.0.0.1:11434/api/generate` |
    | `OLLAMA_MODEL` | No | Default `gemma3:4b` |
 

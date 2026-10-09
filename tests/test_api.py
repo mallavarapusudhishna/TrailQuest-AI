@@ -15,7 +15,10 @@ client = TestClient(app)
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    body = response.json()
+    assert body["status"] == "healthy"
+    assert body["storage"]["mode"] in ("mongodb", "in_memory")
+    assert "durable" in body["storage"]
 
 
 def test_invalid_request_validation():

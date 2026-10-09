@@ -409,6 +409,21 @@ code {
   padding-top: 8px;
 }
 
+.storage-notice {
+  font-size: 0.88rem;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text-main);
+}
+
+.storage-notice.storage-ok {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
 @media (min-width: 600px) {
   .status-buttons {
     grid-template-columns: repeat(3, 1fr);

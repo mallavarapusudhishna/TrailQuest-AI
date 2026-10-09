@@ -7,6 +7,8 @@ const FEEDBACK = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  loadStorageNotice();
+
   const questForm = document.getElementById("quest-form");
   const generateBtn = document.getElementById("generate-btn");
   const loadingSpinner = document.getElementById("loading-spinner");
@@ -200,5 +202,24 @@ document.addEventListener("DOMContentLoaded", () => {
     errorMessage.textContent = msg;
     show(errorCard);
     errorCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  async function loadStorageNotice() {
+    const el = document.getElementById("storage-notice");
+    if (!el) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`);
+      if (!response.ok) return;
+      const data = await response.json();
+      const storage = data.storage;
+      if (!storage) return;
+      el.textContent = storage.message || "";
+      el.classList.remove("hidden");
+      if (storage.durable) {
+        el.classList.add("storage-ok");
+      }
+    } catch {
+      /* ignore — server may be offline until user starts it */
+    }
   }
 });

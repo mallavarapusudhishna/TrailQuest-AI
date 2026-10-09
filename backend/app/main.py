@@ -15,6 +15,7 @@ from backend.app.services.gemma_service import OllamaConnectionError, generate_q
 from backend.app.services.quest_repository import quest_repo
 from backend.app.services.quest_service import generate_user_quest
 from backend.app.services.serpapi_service import SerpApiError, search_outdoor_locations
+from backend.app.services.storage_status import get_storage_status
 
 
 app = FastAPI(
@@ -25,8 +26,12 @@ app = FastAPI(
 
 
 @app.get("/health")
-def health():
-    return {"status": "healthy"}
+async def health():
+    storage = await get_storage_status()
+    return {
+        "status": "healthy",
+        "storage": storage,
+    }
 
 
 @app.post("/generate-quest", response_model=QuestResponse)

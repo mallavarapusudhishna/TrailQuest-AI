@@ -1,3 +1,7 @@
+# Render deployment note:
+# A standard Render web service cannot reach Ollama on your laptop (127.0.0.1).
+# For cloud hosting, set OLLAMA_URL to a separately hosted Ollama-compatible endpoint
+# running an open-weight model, or use Option A (local demo) documented in README.md.
 services:
   - type: web
     name: trailquest-ai
@@ -9,5 +13,9 @@ services:
         sync: false
       - key: MONGODB_URI
         sync: false
+      - key: MONGODB_DB_NAME
+        value: trailquest_db
       - key: OLLAMA_URL
-        value: http://127.0.0.1:11434/api/generate
+        sync: false
+      - key: OLLAMA_MODEL
+        value: gemma3:4b

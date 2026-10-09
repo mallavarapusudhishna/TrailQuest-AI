@@ -1,5 +1,10 @@
-// API Base Configuration (easily updated for local dev or deployment)
 const API_BASE_URL = window.location.origin;
+
+const FEEDBACK = {
+  completed: "Quest complete. Nice work getting outside.",
+  partially_completed: "Progress counts. Thanks for giving it a try.",
+  not_completed: "No worries. You can try again when it works for you.",
+};
 
 document.addEventListener("DOMContentLoaded", () => {
   const questForm = document.getElementById("quest-form");
@@ -9,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const errorMessage = document.getElementById("error-message");
   const questCard = document.getElementById("quest-card");
   const successCard = document.getElementById("success-card");
+  const feedbackTitle = document.getElementById("feedback-title");
   const feedbackMessage = document.getElementById("feedback-message");
 
   const questTitle = document.getElementById("quest-title");
@@ -28,7 +34,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentQuestId = null;
   let selectedStatus = null;
 
-  // Form Submission
   questForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -38,8 +43,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const difficulty = document.getElementById("difficulty").value;
     const interests = document.getElementById("interests").value.trim();
 
-    if (!location) {
-      showError("Please enter a valid location or city.");
+    if (location.length < 2) {
+      showError("Please enter a valid location (at least 2 characters).");
+      return;
+    }
+
+    if (available_time < 15 || available_time > 180) {
+      showError("Available time must be between 15 and 180 minutes.");
       return;
     }
 
@@ -52,9 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const response = await fetch(`${API_BASE_URL}/generate-quest`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           location,
           available_time,
@@ -64,16 +72,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }),
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
 
       if (!response.ok) {
-        throw new Error(data.detail || "Failed to generate quest.");
+        const detail = data.detail;
+        const msg = Array.isArray(detail)
+          ? detail.map((d) => d.msg).join(" ")
+          : detail || "Failed to generate quest.";
+        throw new Error(msg);
       }
 
       displayQuest(data);
     } catch (err) {
       if (err.message.includes("Failed to fetch")) {
-        showError("Backend server is unreachable. Please ensure FastAPI is running.");
+        showError("Cannot reach the server. Start FastAPI with uvicorn and open this page from http://127.0.0.1:8000");
       } else {
         showError(err.message);
       }
@@ -83,35 +100,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Display Quest
   function displayQuest(quest) {
     currentQuestId = quest.quest_id || quest.id;
     selectedStatus = null;
 
     questTitle.textContent = quest.title;
     questLocationName.textContent = quest.location;
-    questAddress.textContent = quest.address ? `📍 ${quest.address}` : "";
+    questAddress.textContent = quest.address || "";
     questDifficulty.textContent = quest.difficulty;
-    questDuration.textContent = `${quest.estimated_duration} mins`;
+    questDuration.textContent = `${quest.estimated_duration} min`;
     questDescription.textContent = quest.description;
     questSafety.textContent = quest.safety_note;
 
     questObjectives.innerHTML = "";
     (quest.objectives || []).forEach((obj) => {
       const li = document.createElement("li");
-      li.textContent = `☐ ${obj}`;
+      li.textContent = obj;
       questObjectives.appendChild(li);
     });
 
-    // Reset completion controls
     statusBtns.forEach((btn) => btn.classList.remove("selected"));
     reflectionInput.value = "";
     submitCompletionBtn.disabled = true;
 
+    hide(errorCard);
     show(questCard);
+    questCard.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Handle Status Button Clicks
   statusBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
       statusBtns.forEach((b) => b.classList.remove("selected"));
@@ -121,51 +137,54 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Submit Completion Result
   submitCompletionBtn.addEventListener("click", async () => {
     if (!currentQuestId || !selectedStatus) return;
 
+    const priorQuestVisible = !questCard.classList.contains("hidden");
     submitCompletionBtn.disabled = true;
-    submitCompletionBtn.textContent = "SAVING...";
+    const originalLabel = submitCompletionBtn.textContent;
+    submitCompletionBtn.textContent = "Saving…";
 
     try {
       const response = await fetch(`${API_BASE_URL}/quests/${currentQuestId}/complete`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: selectedStatus,
           reflection: reflectionInput.value.trim() || null,
         }),
       });
 
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
 
       if (!response.ok) {
         throw new Error(data.detail || "Failed to save completion.");
       }
 
-      // Display status feedback message
-      if (selectedStatus === "completed") {
-        feedbackMessage.textContent = "Nice work. You touched grass today. 🌿";
-      } else if (selectedStatus === "partially_completed") {
-        feedbackMessage.textContent = "Still counts. You got outside and made progress. 🌱";
-      } else {
-        feedbackMessage.textContent = "No worries. The quest will still be here when you're ready. 🌿";
-      }
-
+      feedbackTitle.textContent = "Saved";
+      feedbackMessage.textContent = FEEDBACK[selectedStatus] || "Thank you for logging your quest.";
       hide(questCard);
       show(successCard);
+      successCard.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (err) {
+      if (priorQuestVisible) {
+        show(questCard);
+      }
       showError(err.message);
     } finally {
-      submitCompletionBtn.textContent = "SAVE RESULT";
+      submitCompletionBtn.textContent = originalLabel;
+      submitCompletionBtn.disabled = !selectedStatus;
     }
   });
 
   newQuestBtn.addEventListener("click", () => {
     hide(successCard);
+    document.getElementById("form-card").scrollIntoView({ behavior: "smooth" });
     document.getElementById("location").focus();
   });
 
@@ -180,5 +199,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function showError(msg) {
     errorMessage.textContent = msg;
     show(errorCard);
+    errorCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 });

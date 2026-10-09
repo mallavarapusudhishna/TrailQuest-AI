@@ -1,9 +1,9 @@
 import os
 from typing import List
+
+import httpx
 from fastapi import FastAPI, HTTPException, status
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import httpx
 
 from backend.app.models.quest import (
     QuestCompletionRequest,
@@ -11,16 +11,16 @@ from backend.app.models.quest import (
     QuestGenerateRequest,
     QuestResponse,
 )
-from backend.app.services.gemma_service import generate_quest
+from backend.app.services.gemma_service import OllamaConnectionError, generate_quest
 from backend.app.services.quest_repository import quest_repo
 from backend.app.services.quest_service import generate_user_quest
-from backend.app.services.serpapi_service import search_outdoor_locations
+from backend.app.services.serpapi_service import SerpApiError, search_outdoor_locations
 
 
 app = FastAPI(
     title="TrailQuest AI",
     description="AI-powered outdoor quest generator",
-    version="0.1.0",
+    version="1.0.0",
 )
 
 
@@ -43,7 +43,6 @@ async def generate_quest_endpoint(request: QuestGenerateRequest):
         user_prefs = request.model_dump()
         selected_location = quest_data.pop("_selected_location", {})
 
-        # Save to database repository
         quest_id = await quest_repo.save_quest(
             user_preferences=user_prefs,
             selected_location=selected_location,
@@ -61,20 +60,37 @@ async def generate_quest_endpoint(request: QuestGenerateRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Location search service is not configured properly.",
             )
-        elif "No real outdoor locations found" in err_msg:
+        if "No real outdoor locations found" in err_msg:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=err_msg,
             )
-        else:
+        if "not in the search results" in err_msg or "invalid JSON" in err_msg:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=err_msg,
             )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_msg,
+        )
+    except OllamaConnectionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
+    except SerpApiError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Location search service is temporarily unavailable.",
+        )
     except httpx.ConnectError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI service (Ollama) or search service is unreachable. Please ensure Ollama is running locally.",
+            detail=(
+                "AI service (Ollama) or search service is unreachable. "
+                "Please ensure Ollama is running locally."
+            ),
         )
     except httpx.HTTPStatusError:
         raise HTTPException(
@@ -118,24 +134,36 @@ async def get_quest_endpoint(quest_id: str):
 
 @app.get("/quests", response_model=List[QuestDetailResponse])
 async def list_quests_endpoint(limit: int = 10):
-    quests = await quest_repo.get_recent_quests(limit=limit)
-
-    return quests
+    if limit < 1 or limit > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be between 1 and 50.",
+        )
+    return await quest_repo.get_recent_quests(limit=limit)
 
 
 @app.post("/test-gemma")
 async def test_gemma(prompt: str):
-    result = await generate_quest(prompt)
+    try:
+        result = await generate_quest(prompt)
+    except OllamaConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return {"response": result}
 
 
 @app.get("/test-serpapi")
 async def test_serpapi(location: str = "Chennai"):
-    locations = await search_outdoor_locations(location)
+    try:
+        locations = await search_outdoor_locations(location)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except SerpApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return {"location": location, "results": locations}
 
 
-# Serve static frontend files
-frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
+frontend_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+)
 if os.path.exists(frontend_path):
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")

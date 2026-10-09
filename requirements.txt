@@ -6,3 +6,5 @@ pydantic==2.13.5
 google_search_results==2.4.2
 pymongo==4.18.2
 motor==3.7.1
+pytest==9.1.1
+pytest-asyncio==0.25.2

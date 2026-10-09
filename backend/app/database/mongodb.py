@@ -7,16 +7,16 @@ except ImportError:
     AsyncIOMotorClient = None
     HAS_MOTOR = False
 
-from backend.app.config import MONGODB_URI
+from backend.app.config import MONGODB_DB_NAME, MONGODB_URI
 
 
 def get_database() -> Optional[Any]:
-    """Establishes and returns a MongoDB database connection if MONGODB_URI is provided."""
+    """Return MongoDB database handle when MONGODB_URI and Motor are available."""
     if not MONGODB_URI or not HAS_MOTOR:
         return None
 
     try:
         client = AsyncIOMotorClient(MONGODB_URI)
-        return client.get_default_database("trailquest_db")
+        return client[MONGODB_DB_NAME]
     except Exception:
         return None

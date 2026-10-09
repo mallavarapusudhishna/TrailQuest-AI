@@ -1,165 +1,269 @@
-# TrailQuest AI 🌿
+# TrailQuest AI
 
-> **Hacktoberfest 2026 Challenge — Theme: "Touch Grass"**
-> An AI-powered outdoor quest generator that uses open-weight AI (Gemma 3 4B) and SerpApi to encourage users to spend less time on screens and more time exploring real-world outdoor locations.
+**Hacktoberfest 2026 — Week 1 · Theme: Touch Grass**
 
----
+TrailQuest AI turns a few preferences into one real-world outdoor quest. SerpApi finds actual places near you; an open-weight model (Gemma 3 4B via Ollama) personalizes the quest from those results only. You go outside, then come back to log how it went—without turning the app into another endless feed.
 
-## 📌 Problem & Solution
-
-* **The Problem:** Modern screen addiction keeps people indoors and isolated from nature, leading to sedentary habits.
-* **The Solution:** **TrailQuest AI** turns outdoor exploration into a game! Users input their location, available time, preferred activity, difficulty level, and interests. The app fetches **real local outdoor spots** via SerpApi and prompts **Gemma 3 4B (via Ollama)** to craft a personalized outdoor quest. Users complete the quest offline, return, and log their completion status and reflections.
+Tagline: **Less scrolling. More exploring.**
 
 ---
 
-## ✨ Features
+## Problem
 
-- 📍 **Real-World Location Search:** Uses SerpApi (Google Maps engine) to discover real parks, gardens, trails, and outdoor areas near the user.
-- 🧠 **Gemma 3 4B Integration:** Local open-weight LLM creates custom quests based **STRICTLY** on the real locations returned by SerpApi — no hallucinated or fake locations.
-- 🎯 **Structured Quests:** Generates quest title, selected real location, estimated duration, difficulty rating, description, 3–5 actionable objectives, and safety tips.
-- 📝 **Quest Reflection & Tracking:** Users can log quest results as `Completed`, `Partially Completed`, or `Not Completed`, along with personal reflections.
-- 💾 **MongoDB Atlas Storage:** Stores user preferences, generated quests, completion statuses, and timestamps.
-- 📱 **Clean Responsive UI:** Minimalist HTML/CSS/Vanilla JavaScript frontend.
+Many people want to spend more time outdoors but default to screens. Generic activity lists do not match local places, time, or interests.
+
+## Solution
+
+TrailQuest AI accepts location, available time, activity, difficulty, and optional interests. The backend searches for real outdoor locations, sends them to Gemma for one structured quest, validates that the chosen place came from the search results, saves the quest (MongoDB Atlas or in-memory fallback), and lets you record completion with an optional reflection.
 
 ---
 
-## 🏗️ Architecture & Technology Stack
+## Features
 
+- Real outdoor location discovery via SerpApi (Google Maps engine)
+- Quest personalization with Gemma 3 4B through Ollama (configurable model)
+- Strict location validation—quests cannot use invented parks or trails
+- Quest storage with preferences, selected place, objectives, and timestamps (UTC)
+- Completion tracking: `completed`, `partially_completed`, `not_completed`
+- Vanilla HTML/CSS/JS frontend served by FastAPI
+- Pytest suite with mocked external services
+
+---
+
+## Technology stack
+
+| Layer | Tools |
+| --- | --- |
+| Frontend | HTML, CSS, JavaScript |
+| Backend | Python, FastAPI, Pydantic, Uvicorn |
+| Open-weight AI | Gemma 3 4B via [Ollama](https://ollama.com/) |
+| Locations | [SerpApi](https://serpapi.com/) |
+| Database | MongoDB Atlas (Motor), in-memory fallback |
+| Version control | Git, GitHub |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph client [Browser]
+    UI[HTML / CSS / JS]
+  end
+  subgraph server [FastAPI]
+    API[REST API]
+    QS[Quest orchestration]
+    VAL[Location + JSON validation]
+  end
+  UI --> API
+  API --> QS
+  QS --> SERP[SerpApi]
+  QS --> OLL[Ollama / Gemma]
+  QS --> VAL
+  API --> MDB[(MongoDB Atlas)]
+  SERP -.->|real places| QS
+  OLL -.->|personalized quest JSON| VAL
 ```
-   [ Web Frontend (HTML/CSS/JS) ]
-                 │
-                 ▼
-      [ FastAPI Backend (Python) ]
-         │                │
-         ▼                ▼
-   [ SerpApi ]     [ Gemma 3 4B ]
-(Real Locations)   (Ollama Local)
-         │                │
-         └────────┬───────┘
-                  ▼
-         [ MongoDB Atlas ]
-        (Quest & Logs DB)
-```
-
-- **Frontend:** HTML5, CSS3 (Vanilla), JavaScript (ES6+)
-- **Backend:** Python 3.14, FastAPI, Pydantic, Uvicorn
-- **AI Model:** Gemma 3 4B via Ollama
-- **Location API:** SerpApi (Google Maps Engine)
-- **Database:** MongoDB Atlas (via Motor / AsyncPyMongo with in-memory fallback for offline dev)
 
 ---
 
-## 📂 Project Structure
+## User flow
+
+1. Open the app and enter preferences.
+2. Backend fetches up to five real nearby outdoor places.
+3. Gemma generates one quest JSON from those places only.
+4. Python validates JSON, objectives (3–5), and location match.
+5. Quest is saved and shown briefly—then you go outside.
+6. Return to log completion and optional reflection.
+
+---
+
+## Why open-weight AI matters (for this project)
+
+- **Local inference:** With Ollama, quest generation can run on your machine instead of a closed commercial chat API.
+- **Inspectability:** Prompts and orchestration live in this repository; you can change them within the model license terms.
+- **Model choice:** Set `OLLAMA_MODEL` to another compatible open-weight model if it follows the same JSON contract.
+- **Honest limits:** SerpApi still needs the internet for location search. MongoDB Atlas stores quests when configured. Local inference keeps Ollama-bound prompts on your device during generation—it does not make the entire app offline.
+
+Gemma is an **open-weight model** with its own license; it is not public-domain software.
+
+---
+
+## How the pieces work together
+
+1. **SerpApi** — Queries Google Maps for parks, gardens, trails, and similar places near the user’s location. Names, addresses, ratings, and types are passed to the model; missing fields are not fabricated.
+2. **Ollama + Gemma** — Receives preferences and the location list, returns one JSON quest. The app validates structure and enforces location match in code.
+3. **MongoDB** — Persists quests and completion data when `MONGODB_URI` is set; otherwise an in-memory store is used for local development.
+
+---
+
+## Project structure
 
 ```
 TrailQuestAI/
-├── backend/
-│   └── app/
-│       ├── __init__.py
-│       ├── config.py             # Environment configuration
-│       ├── main.py               # FastAPI application & endpoints
-│       ├── database/
-│       │   └── mongodb.py        # MongoDB Atlas repository & fallback
-│       ├── models/
-│       │   └── quest.py          # Pydantic request/response schemas
-│       └── services/
-│           ├── gemma_service.py   # Ollama API client
-│           ├── serpapi_service.py # SerpApi location search client
-│           └── quest_service.py   # Quest orchestration & prompt logic
+├── backend/app/
+│   ├── config.py
+│   ├── main.py
+│   ├── database/mongodb.py
+│   ├── models/quest.py
+│   └── services/
+│       ├── gemma_service.py
+│       ├── serpapi_service.py
+│       ├── quest_service.py
+│       └── quest_repository.py
 ├── frontend/
-│   ├── index.html                # Main UI layout
-│   ├── style.css                 # Modern responsive styling
-│   └── script.js                 # API integration & DOM logic
+│   ├── index.html
+│   ├── style.css
+│   └── script.js
 ├── tests/
-│   └── test_api.py               # Pytest suite
-├── .env.example                  # Environment template
-├── requirements.txt              # Python dependencies
-├── PROJECT_CONTEXT.md            # Project architecture context
-└── TRAILQUEST_MVP_REQUIREMENTS.md# MVP specification
+│   ├── test_api.py
+│   └── test_quest_service.py
+├── .env.example
+├── requirements.txt
+├── render.yaml
+├── SUBMISSION.md
+├── PROJECT_CONTEXT.md
+└── TRAILQUEST_MVP_REQUIREMENTS.md
 ```
 
 ---
 
-## 🚀 Local Setup & Installation
+## Installation (Windows / PowerShell)
 
 ### Prerequisites
-1. Python 3.10+
-2. [Ollama](https://ollama.com/) installed and running locally
-3. Pull the Gemma 3 4B model:
-   ```bash
-   ollama pull gemma3:4b
-   ```
-4. SerpApi API Key ([Get one free here](https://serpapi.com/))
 
-### Installation Steps
+- Python 3.10+
+- [Ollama](https://ollama.com/) installed
+- SerpApi API key
+- (Optional) MongoDB Atlas connection string
 
-1. **Clone the repository:**
-   ```bash
+### Steps
+
+1. **Clone and enter the repo**
+
+   ```powershell
    git clone https://github.com/mallavarapusudhishna/TrailQuest-AI.git
    cd TrailQuest-AI
    ```
 
-2. **Set up virtual environment:**
-   ```bash
-   python -m venv .venv
-   # Windows:
-   .\.venv\Scripts\activate
-   # Linux/macOS:
-   source .venv/bin/activate
-   ```
+2. **Virtual environment**
 
-3. **Install dependencies:**
-   ```bash
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
    pip install -r requirements.txt
    ```
 
-4. **Configure Environment Variables:**
-   Create a `.env` file in the project root based on `.env.example`:
-   ```env
-   SERPAPI_API_KEY=your_serpapi_key_here
-   MONGODB_URI=your_mongodb_atlas_uri_here
+3. **Environment variables**
+
+   Copy `.env.example` to `.env` and fill in values:
+
+   | Variable | Required | Description |
+   | --- | --- | --- |
+   | `SERPAPI_API_KEY` | Yes | SerpApi key for location search |
+   | `MONGODB_URI` | No | MongoDB Atlas URI; omit to use in-memory storage |
+   | `MONGODB_DB_NAME` | No | Database name (default `trailquest_db`) |
+   | `OLLAMA_URL` | No | Default `http://127.0.0.1:11434/api/generate` |
+   | `OLLAMA_MODEL` | No | Default `gemma3:4b` |
+
+4. **Ollama and Gemma**
+
+   ```powershell
+   ollama pull gemma3:4b
    ```
 
-5. **Start Ollama service (if not running):**
-   ```bash
-   ollama serve
+   Ensure the Ollama app or `ollama serve` is running before generating quests.
+
+5. **Run the API (separate terminal is fine)**
+
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   python -m uvicorn backend.app.main:app --reload --reload-exclude ".venv"
    ```
 
-6. **Run the FastAPI server:**
-   ```bash
-   python -m uvicorn backend.app.main:app --reload
-   ```
+6. **Open the app**
 
-7. Open your browser at `http://127.0.0.1:8000` to use TrailQuest AI!
+   Visit [http://127.0.0.1:8000](http://127.0.0.1:8000) — FastAPI serves the frontend from `/`.
 
 ---
 
-## 🧪 Running Tests
+## API documentation
 
-Automated unit and integration tests mock external API calls to run reliably without consuming live credits:
+Interactive docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-```bash
-python -m pytest
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/health` | Health check |
+| `POST` | `/generate-quest` | Search locations, generate quest, save |
+| `GET` | `/quests/{quest_id}` | Fetch quest by ID |
+| `POST` | `/quests/{quest_id}/complete` | Update completion status and reflection |
+| `GET` | `/quests?limit=10` | Recent quests (limit 1–50) |
+
+**Generate quest body example:**
+
+```json
+{
+  "location": "Chennai",
+  "available_time": 60,
+  "activity": "walking",
+  "difficulty": "easy",
+  "interests": "nature, photography"
+}
 ```
 
 ---
 
-## 📡 API Endpoints
+## Running tests
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/health` | API health check |
-| `POST` | `/generate-quest` | Accepts preferences, searches locations via SerpApi, prompts Gemma, saves quest to DB |
-| `POST` | `/quests/{id}/complete` | Updates quest completion status (`completed`, `partially_completed`, `not_completed`) & reflection |
-| `GET` | `/quests/{id}` | Retrieves quest details and completion status by ID |
-| `GET` | `/quests` | Lists recent quests |
+Tests mock SerpApi, Ollama, and MongoDB—no live keys or network required:
+
+```powershell
+python -m pytest tests/ -v
+```
 
 ---
 
-## 🌐 Deployment Notes (Render)
+## Deployment architecture
 
-When deploying the MVP to cloud platforms like Render:
-1. **Ollama / Gemma model hosting:** Standard Render Web Services run in ephemeral containers without GPU acceleration. For cloud production, point `OLLAMA_URL` in `gemma_service.py` to a hosted Ollama instance (e.g., Modal, Replicate, RunPod, or a cloud VM running Ollama).
-2. Set `SERPAPI_API_KEY` and `MONGODB_URI` environment variables in the Render Dashboard.
-3. Build Command: `pip install -r requirements.txt`
-4. Start Command: `uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT`
+**Recommended for this challenge: Option A — local demonstration**
+
+Ollama on your laptop listens on `127.0.0.1`. A cloud host (e.g. Render free tier) **cannot** reach your machine’s Ollama instance. Running Gemma 3 4B also needs substantial RAM; a small free web dyno is not a reliable place to load a 3B+ model.
+
+| Option | Description |
+| --- | --- |
+| **A (recommended)** | Run FastAPI + Ollama locally; demo end-to-end on your machine |
+| **B** | Deploy FastAPI + frontend; point `OLLAMA_URL` to a **separately hosted** Ollama-compatible endpoint running an open-weight model |
+| **C** | Self-host backend and Ollama on a VM with enough memory (not configured in this repo) |
+
+`render.yaml` is a template only. Set `OLLAMA_URL` to a reachable inference URL before deploying—do not leave the default `127.0.0.1` on Render.
+
+---
+
+## Current limitations
+
+- Location search requires internet (SerpApi).
+- Quest generation requires a running Ollama instance with the configured model.
+- The app does not verify opening hours, accessibility, or safety of places.
+- First Gemma response can take up to ~1–2 minutes on CPU-only hardware.
+- Without `MONGODB_URI`, quests survive only until the server process restarts (in-memory fallback).
+
+---
+
+## Future improvements
+
+- Retry or repair invalid model JSON once before failing
+- Optional quest history view in the UI
+- Hosted Ollama deployment guide for a specific cloud VM tier
+- Stronger activity/difficulty enums shared between frontend and backend
+
+---
+
+## Hacktoberfest context
+
+Built for **Hacktoberfest 2026 Week 1** under the **Touch Grass** theme: open-weight AI that helps people step away from screens and into real outdoor experiences—with minimal time spent in the app itself.
+
+---
+
+## License
+
+See repository license file if present; model use is subject to [Gemma’s license terms](https://ai.google.dev/gemma/terms).

@@ -1,21 +1,39 @@
 import httpx
 
+from backend.app.config import OLLAMA_MODEL, OLLAMA_URL
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-MODEL_NAME = "gemma3:4b"
+
+class OllamaConnectionError(Exception):
+    """Raised when Ollama cannot be reached or returns an error."""
 
 
 async def generate_quest(prompt: str) -> str:
     payload = {
-        "model": MODEL_NAME,
+        "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(OLLAMA_URL, json=payload)
+            response.raise_for_status()
+            data = response.json()
+    except httpx.ConnectError as exc:
+        raise OllamaConnectionError(
+            "Could not connect to Ollama. Ensure Ollama is running locally."
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise OllamaConnectionError(
+            "Ollama request timed out while generating the quest."
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise OllamaConnectionError(
+            "Ollama returned an error while generating the quest."
+        ) from exc
 
-        data = response.json()
+    response_text = data.get("response")
+    if not response_text or not str(response_text).strip():
+        raise OllamaConnectionError("Ollama returned an empty response.")
 
-    return data["response"]
+    return str(response_text)

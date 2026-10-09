@@ -1,10 +1,13 @@
 import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
+from backend.app.services.gemma_service import OllamaConnectionError
 from backend.app.services.quest_repository import quest_repo
+from backend.app.services.serpapi_service import SerpApiError
 
 client = TestClient(app)
 
@@ -28,16 +31,31 @@ def test_invalid_request_validation():
     assert response.status_code == 422
 
 
-@patch("backend.app.main.generate_user_quest")
+def test_invalid_request_time_too_long():
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 200,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 422
+
+
+@patch("backend.app.main.generate_user_quest", new_callable=AsyncMock)
 def test_generate_quest_success(mock_gen):
     mock_gen.return_value = {
         "title": "Test Quest",
         "location": "Test Park",
+        "address": "123 Park Rd",
         "estimated_duration": 60,
         "difficulty": "easy",
         "description": "A test quest.",
-        "objectives": ["Walk 1 km"],
+        "objectives": ["Walk 1 km", "Find a bench", "Breathe deeply"],
         "safety_note": "Stay safe",
+        "_selected_location": {"name": "Test Park", "address": "123 Park Rd"},
     }
 
     response = client.post(
@@ -55,8 +73,179 @@ def test_generate_quest_success(mock_gen):
     assert "id" in data
 
 
+@patch("backend.app.main.generate_user_quest", new_callable=AsyncMock)
+def test_no_locations_found(mock_gen):
+    mock_gen.side_effect = ValueError("No real outdoor locations found for 'Nowhere'.")
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Nowhere",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 404
+
+
+@patch("backend.app.main.generate_user_quest", new_callable=AsyncMock)
+def test_serpapi_key_missing(mock_gen):
+    mock_gen.side_effect = ValueError("SERPAPI_API_KEY is not configured.")
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 500
+    assert "not configured" in response.json()["detail"].lower()
+
+
+@patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
+def test_serpapi_failure(mock_search):
+    mock_search.side_effect = SerpApiError("fail")
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 502
+
+
+@patch("backend.app.services.quest_service.generate_quest", new_callable=AsyncMock)
+@patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
+def test_ollama_connection_failure(mock_search, mock_gemma):
+    mock_search.return_value = [
+        {
+            "name": "Real Park",
+            "address": "1 Main St",
+            "rating": 4.5,
+            "type": "Park",
+        }
+    ]
+    mock_gemma.side_effect = OllamaConnectionError("Ollama down")
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 503
+
+
+@patch("backend.app.services.quest_service.generate_quest", new_callable=AsyncMock)
+@patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
+def test_invalid_gemma_json(mock_search, mock_gemma):
+    mock_search.return_value = [
+        {"name": "Real Park", "address": "1 Main St", "rating": 4.5, "type": "Park"}
+    ]
+    mock_gemma.return_value = "Sorry, I cannot format JSON today."
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 502
+    assert "invalid JSON" in response.json()["detail"]
+
+
+@patch("backend.app.services.quest_service.generate_quest", new_callable=AsyncMock)
+@patch("backend.app.services.quest_service.search_outdoor_locations", new_callable=AsyncMock)
+def test_invented_location_rejected(mock_search, mock_gemma):
+    mock_search.return_value = [
+        {"name": "Real Park", "address": "1 Main St", "rating": 4.5, "type": "Park"}
+    ]
+    mock_gemma.return_value = """
+    {
+      "title": "Fake",
+      "location": "Imaginary Gardens",
+      "description": "A quest",
+      "objectives": ["A", "B", "C"],
+      "safety_note": "Hydrate",
+      "estimated_duration": 60,
+      "difficulty": "easy"
+    }
+    """
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 502
+    assert "search results" in response.json()["detail"]
+
+
+def test_get_quest_by_id():
+    qid = asyncio.run(
+        quest_repo.save_quest(
+            user_preferences={"location": "Chennai"},
+            selected_location={"name": "Park A"},
+            quest_data={
+                "title": "Quest A",
+                "location": "Park A",
+                "estimated_duration": 60,
+                "difficulty": "easy",
+                "description": "Walk A",
+                "objectives": ["Obj 1", "Obj 2", "Obj 3"],
+                "safety_note": "Safe",
+            },
+        )
+    )
+    res = client.get(f"/quests/{qid}")
+    assert res.status_code == 200
+    assert res.json()["quest"]["title"] == "Quest A"
+
+
+def test_missing_quest_returns_404():
+    res = client.get("/quests/00000000-0000-0000-0000-000000000000")
+    assert res.status_code == 404
+
+
+@patch("backend.app.main.quest_repo.save_quest", new_callable=AsyncMock)
+@patch("backend.app.main.generate_user_quest", new_callable=AsyncMock)
+def test_database_error_on_save(mock_gen, mock_save):
+    mock_gen.return_value = {
+        "title": "Test Quest",
+        "location": "Test Park",
+        "estimated_duration": 60,
+        "difficulty": "easy",
+        "description": "A test quest.",
+        "objectives": ["A", "B", "C"],
+        "safety_note": "Stay safe",
+        "_selected_location": {"name": "Test Park"},
+    }
+    mock_save.side_effect = RuntimeError("db down")
+    response = client.post(
+        "/generate-quest",
+        json={
+            "location": "Chennai",
+            "available_time": 60,
+            "activity": "walking",
+            "difficulty": "easy",
+        },
+    )
+    assert response.status_code == 500
+
+
 def test_complete_statuses_and_retrieval():
-    # 1. Test 'completed'
     qid1 = asyncio.run(
         quest_repo.save_quest(
             user_preferences={"location": "Chennai"},
@@ -67,7 +256,7 @@ def test_complete_statuses_and_retrieval():
                 "estimated_duration": 60,
                 "difficulty": "easy",
                 "description": "Walk A",
-                "objectives": ["Obj 1"],
+                "objectives": ["Obj 1", "Obj 2", "Obj 3"],
                 "safety_note": "Safe",
             },
         )
@@ -81,8 +270,8 @@ def test_complete_statuses_and_retrieval():
     assert res1.json()["completion_status"] == "completed"
     assert res1.json()["reflection"] == "Great outdoor experience."
     assert res1.json()["completed_at"] is not None
+    assert res1.json()["quest"]["title"] == "Quest A"
 
-    # 2. Test 'partially_completed'
     qid2 = asyncio.run(
         quest_repo.save_quest(
             user_preferences={"location": "Chennai"},
@@ -93,7 +282,7 @@ def test_complete_statuses_and_retrieval():
                 "estimated_duration": 45,
                 "difficulty": "medium",
                 "description": "Walk B",
-                "objectives": ["Obj 1"],
+                "objectives": ["Obj 1", "Obj 2", "Obj 3"],
                 "safety_note": "Safe",
             },
         )
@@ -109,7 +298,6 @@ def test_complete_statuses_and_retrieval():
     assert res2.status_code == 200
     assert res2.json()["completion_status"] == "partially_completed"
 
-    # 3. Test 'not_completed'
     qid3 = asyncio.run(
         quest_repo.save_quest(
             user_preferences={"location": "Chennai"},
@@ -120,7 +308,7 @@ def test_complete_statuses_and_retrieval():
                 "estimated_duration": 30,
                 "difficulty": "easy",
                 "description": "Walk C",
-                "objectives": ["Obj 1"],
+                "objectives": ["Obj 1", "Obj 2", "Obj 3"],
                 "safety_note": "Safe",
             },
         )
@@ -138,14 +326,12 @@ def test_complete_statuses_and_retrieval():
 
 
 def test_completion_error_handling():
-    # Nonexistent quest ID (404)
     res_404 = client.post(
         "/quests/nonexistent-id-12345/complete",
         json={"status": "completed", "reflection": "Test"},
     )
     assert res_404.status_code == 404
 
-    # Invalid status value (422)
     res_422 = client.post(
         "/quests/some-id/complete",
         json={"status": "invalid_status_value"},

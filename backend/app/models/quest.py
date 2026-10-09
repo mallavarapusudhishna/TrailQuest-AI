@@ -1,13 +1,23 @@
 from typing import Optional, List, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class QuestGenerateRequest(BaseModel):
     location: str = Field(..., min_length=2, description="City or region name")
-    available_time: int = Field(..., gt=0, le=480, description="Time in minutes")
+    available_time: int = Field(
+        ...,
+        ge=15,
+        le=180,
+        description="Time available in minutes (15–180)",
+    )
     activity: str = Field(..., min_length=2, description="Activity type e.g., walking, hiking")
-    difficulty: str = Field(..., min_length=2, description="Difficulty level e.g., easy, medium, hard")
+    difficulty: str = Field(..., min_length=2, description="Difficulty level e.g., easy, moderate, hard")
     interests: Optional[str] = Field("", description="Optional user interests e.g., nature, photography")
+
+    @field_validator("location", "activity", "difficulty")
+    @classmethod
+    def strip_strings(cls, value: str) -> str:
+        return value.strip()
 
 
 class QuestResponse(BaseModel):
